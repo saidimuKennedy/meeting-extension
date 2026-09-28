@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <span class="dot" id="status-dot"></span>
+      <h1>Meeting Notes</h1>
+      <button class="ghost" id="settings-toggle" aria-label="Settings">Settings</button>
+    </header>
+
+    <section class="controls">
+      <button id="start" class="primary">Start</button>
+      <button id="stop" class="secondary" disabled>Stop</button>
+      <span class="status" id="status-text">Idle</span>
+    </section>
+
+    <section class="settings hidden" id="settings">
+      <label>Gemini API key <input type="password" id="gemini-key" placeholder="AIza..." /></label>
+      <label>DeepSeek API key <input type="password" id="deepseek-key" placeholder="sk-..." /></label>
+      <label>Template
+        <select id="template"></select>
+      </label>
+      <label>Gemini models (comma-separated) <input id="gemini-models" placeholder="gemini-3.6-flash" /></label>
+      <label>DeepSeek model <input id="deepseek-model" placeholder="deepseek-chat" /></label>
+      <button id="save-settings" class="primary">Save</button>
+    </section>
+
+    <section class="output">
+      <div class="tabs">
+        <button class="tab active" data-view="notes">Notes</button>
+        <button class="tab" data-view="transcript">Transcript</button>
+      </div>
+      <article id="notes" class="markdown empty">No notes yet.</article>
+      <pre id="transcript" class="hidden"></pre>
+    </section>
+
+    <section class="history">
+      <h2>History</h2>
+      <ul id="history-list"></ul>
+    </section>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>
