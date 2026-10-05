@@ -29,11 +29,20 @@ else
   echo "OK no remote scripts"
 fi
 
-echo "== forbidden hosts (only the two providers allowed) =="
+echo "== provider hosts (OpenAI and DeepSeek only) =="
 if grep -rhoE 'https://[a-z0-9.-]+' "$ROOT/src" 2>/dev/null \
    | sort -u \
-   | grep -vE 'generativelanguage\.googleapis\.com|api\.deepseek\.com|^$'; then
-  echo "NOTE: unexpected host(s) above — confirm with reviewer"
+   | grep -vE 'api\.openai\.com|api\.deepseek\.com|^$'; then
+  echo "FAIL: unexpected provider host"; fail=1
+else
+  echo "OK provider hosts"
+fi
+
+echo "== retired transcription runtime (Gemini must be absent from source/manifest) =="
+if grep -rniE 'gemini|generativelanguage' "$ROOT/src" "$ROOT/manifest.json" 2>/dev/null; then
+  echo "FAIL: retired transcription runtime reference remains"; fail=1
+else
+  echo "OK no Gemini runtime references"
 fi
 
 echo "== expected files =="
@@ -51,7 +60,8 @@ for f in \
   src/lib/net.js \
   src/lib/store.js \
   src/lib/templates.js \
-  src/lib/providers/transcription.gemini.js \
+  src/lib/providers/transcription/index.js \
+  src/lib/providers/transcription.openai.js \
   src/lib/providers/notes.deepseek.js ; do
   if [ -f "$ROOT/$f" ]; then echo "OK $f"; else echo "MISSING $f"; fail=1; fi
 done

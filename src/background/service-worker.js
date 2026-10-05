@@ -2,15 +2,13 @@ import { MSG } from '../lib/messages.js';
 
 const OFFSCREEN_PATH = 'src/offscreen/offscreen.html';
 
-// setPanelBehavior persists across reloads. An earlier build set this to true, which
-// swallows the action click and prevents the activeTab grant that tabCapture requires.
-// Force it off so chrome.action.onClicked fires instead.
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(console.error);
-
 chrome.action.onClicked.addListener((tab) => {
-  // Opening from the action click counts as invoking the extension, which grants
-  // activeTab for this tab. tabCapture.getMediaStreamId requires that invocation.
-  chrome.sidePanel.open({ windowId: tab.windowId }).catch(console.error);
+  const extensionRoot = chrome.runtime.getURL('');
+  if (tab?.url?.startsWith(extensionRoot)) return;
+
+  const workspaceUrl = new URL(chrome.runtime.getURL('src/sidepanel/sidepanel.html'));
+  if (tab?.id) workspaceUrl.searchParams.set('targetTabId', String(tab.id));
+  chrome.tabs.create({ url: workspaceUrl.href }).catch(console.error);
 });
 
 async function hasOffscreen() {
@@ -57,7 +55,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
   if (msg.type === MSG.START_CAPTURE) {
-    startCapture(msg.meetingId).then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
+    startCapture(msg.meetingId, msg.targetTabId).then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
   if (msg.type === MSG.STOP_CAPTURE) {
@@ -66,8 +64,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-async function startCapture(meetingId) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+async function startCapture(meetingId, targetTabId) {
+  let tab;
+  if (Number.isInteger(targetTabId) && targetTabId > 0) {
+    try {
+      tab = await chrome.tabs.get(targetTabId);
+    } catch {
+      throw new Error('The meeting tab is no longer open. Reopen the meeting tab and start again.');
+    }
+  } else {
+    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  }
   if (!tab?.id) throw new Error('No active tab to capture.');
 
   let streamId;

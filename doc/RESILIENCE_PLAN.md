@@ -228,3 +228,123 @@ they come first. T15 unblocks long meetings; T16 and T17 harden the model and co
 - Should Retry be automatic (on transient errors) or always user-initiated? (Proposal: automatic
   within a run; user-initiated after a terminal failure.)
 - Is a "processing queue" needed if two meetings are recorded back-to-back? (Probably not at 5 users.)
+
+---
+
+## 11. Next improvement roadmap — audit 2026-10-02
+
+The original T13–T17 work is present in the source tree. It is a useful baseline, but the plans
+and `architecture.md` still describe the earlier Gemini-only, single-recording design. The following
+tasks supersede the stale Gemini-specific portions of this document. Execute them in order, keep
+each task reviewable, and update the architecture and plan evidence as implementation lands.
+
+### Audit findings
+
+- `offscreen.js` already rotates the recorder every 10 minutes and writes each WebM segment to
+  IndexedDB. The side panel transcribes the saved segments sequentially and shows segment progress.
+- `fetchWithRetry()` handles transient network/provider failures. DeepSeek notes use map-reduce over
+  transcripts longer than 40,000 characters.
+- A transcription retry currently starts at segment 1. Completed segment transcripts are not saved
+  independently, so a failure late in a multi-hour meeting repeats paid requests.
+- Recorder rotation is asynchronous. Track termination, failed IndexedDB writes, extension reload,
+  and incomplete-recording recovery need an explicit lifecycle and visible states. History currently
+  offers Retry for every status other than `done`, including a meeting that may still be recording.
+- The settings and UI expose exactly two built-in note templates (`standard`, `standup`). The current
+  notes prompts do not consistently distinguish decisions, proposals, owners, due dates, and open
+  questions; long-note reduction uses one generic summarizer regardless of the selected template.
+- `architecture.md` and earlier task descriptions still say Gemini, refer to an obsolete inline
+  audio request path, and do not document the current segment store and retry pipeline.
+- No code was intentionally changed during this audit. An initial uncommitted provider-switch attempt
+  was reverted before planning; the implementation baseline remains unchanged.
+
+### T18 — Pluggable transcription providers (planned)
+
+**Goal:** replace Gemini with Whisper first, while making the transcription API provider selectable
+and easy to extend or replace later.
+
+**Files:** transcription provider modules/registry, `models.js`, settings and side panel,
+`manifest.json`, architecture and task plans.
+
+**Implementation points:** define a small common transcription interface and provider registry; ship
+OpenAI Whisper as the first adapter; store each provider's key/settings separately from DeepSeek;
+show only settings relevant to the selected provider; request any needed host permission; remove
+Gemini from active UI/code. Keep the audio segments provider-neutral so changing provider never
+requires re-recording. Make missing-key and HTTP errors actionable. Preserve legacy meetings.
+
+The OpenAI transcription API accepts WebM and requires a file and model. Use the official
+[Create transcription API reference](https://platform.openai.com/docs/api-reference/audio/createTranscription)
+as the Whisper adapter authority. It documents a 25 MB upload limit; measure/guard each segment and
+retain a margin under that limit. The existing 10-minute, 32 kbps segments are expected to be well
+below it, but actual encoded size must be checked rather than assumed.
+
+**Acceptance:** a short saved segment transcribes through Whisper; provider selection and settings
+work; adding another adapter does not require changes to recording/storage; invalid/missing key
+errors are visible; DeepSeek settings and existing history remain.
+
+### T19 — Multi-hour recording durability and resumable transcription (planned)
+
+**Goal:** record and process several hours without losing audio or repeating completed transcription
+work after a recoverable failure.
+
+**Files:** `offscreen.js`, `store.js`, `sidepanel.js`, `service-worker.js`, messages, architecture.
+
+**Implementation points:** persist each finished segment before reporting it complete; persist each
+transcript segment and its progress on the meeting record (or a dedicated IndexedDB store); resume
+from the first missing/failed segment; maintain deterministic ordering and global timestamp offsets;
+handle recorder errors, stopped tab tracks, and IndexedDB quota errors by stopping safely and showing
+which audio was retained. Distinguish `recording`, `recorded`, `transcribing`, `generating`, `done`,
+and `error` in controls and history. Do not offer Retry for active recordings. Add explicit recovery
+for meetings left in `recording` by a panel/extension reload. Keep sequential provider calls to avoid
+rate-limit bursts.
+
+Before changing segment duration or introducing a hard recording limit, inspect actual encoded sizes,
+IndexedDB quota behavior, and Chrome offscreen-document lifecycle. Add a user-visible duration and
+segment count so a multi-hour session can be monitored. Keep captured audio until notes succeed or
+the user deletes the meeting. Persist the completed transcript and notes with the meeting, independent
+of audio retention. Add export for transcript and notes (Markdown/text); deleting a meeting must also
+delete its segments and saved derived data. Document that retryable recordings consume local disk
+space.
+
+**Acceptance:** multi-hour capture creates ordered, non-empty segments; progress and duration remain
+visible; retry sends only missing segments; transcript and notes persist after reload and can be
+exported; storage/track errors stop cleanly and leave a recoverable record.
+
+### T20 — Optional templates and better notes (planned)
+
+**Goal:** improve note quality without forcing the user to pick a template.
+
+**Files:** `templates.js`, `notes.deepseek.js`, side panel UI, architecture.
+
+Add a "General notes" option that generates useful notes without a fixed section template, plus
+optional built-in choices such as Standard meeting, Standup, Project review, Interview, Lecture/training,
+and Action items. Allow a user prompt/instructions field to customize General notes. Each choice must
+work with long-transcript reduction. Preserve the transcript as source of truth; distinguish decisions
+from proposals; never invent owners/dates; state when information is missing; retain risks,
+dependencies, disagreements, and open questions. Split long transcripts on paragraph or timestamp
+boundaries with overlap, persist partial summaries, and make reduction match the chosen mode.
+
+**Acceptance:** General notes works without a template; optional formats and custom instructions
+persist across reload; long and short outputs preserve facts and do not invent owners/dates; retries
+do not redo completed reduction chunks; rendered output remains escaped.
+
+### T21 — Usable UI and operating guide (planned)
+
+**Goal:** make everyday recording and finding saved work simple, with clear recovery states.
+
+Keep the side panel compact and add an expanded full-page workspace in an extension tab; carry the
+originating meeting-tab ID into that page so capture stays on the correct tab. Use a responsive
+two-column layout on wide screens. Simplify the main view around Start/Stop, elapsed time, and status.
+Move infrequent settings behind a clearly labeled settings area; group provider/key and notes options;
+use clear labels, defaults, and help text. Make saved meetings easy to browse, search/open, rename,
+export, and delete. Explain OpenAI quota errors with billing/credit guidance. Show microphone
+availability and actionable capture/provider errors. Add a concise README covering installation, API
+keys, permissions, processing, local retention, and common errors.
+Update architecture/task plans to describe the actual implementation.
+
+**Acceptance:** a new user can configure providers and notes behavior, record a multi-hour session,
+understand progress/errors, reopen/export/delete transcript and notes, and understand where audio is kept.
+
+### Execution order
+
+`T18 → T19 → T20 → T21`. Update the task tables when each task is implemented and reviewed. This
+roadmap is planning only; no T18–T21 implementation has begun.

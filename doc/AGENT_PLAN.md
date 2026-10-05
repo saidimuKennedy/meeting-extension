@@ -393,6 +393,10 @@ The agent updates **Status** and **Evidence** after each task. The reviewer upda
 | T15 | Chunked recording + stitched transcription | done | 10-min segment rotation; sequential transcription with progress | pending |
 | T16 | Model fallback chain (configurable) | done | `models.js` + settings inputs; fall-through on 404/5xx | pending |
 | T17 | Map-reduce notes for long transcripts | done | `notes.deepseek.js` map-reduce above 40k chars | pending |
+| T18 | Pluggable transcription providers, starting with Whisper | done | OpenAI adapter + provider registry; Gemini removed; per-segment requests and actionable provider errors | pending |
+| T19 | Multi-hour durability, saved transcript/notes, export | done | IndexedDB DB v4; saved segments/results; retry resume; exports; delete cascade; interruption recovery | pending |
+| T20 | Optional templates and better notes | done | General Notes + six optional formats; persisted custom instructions and reduction chunks | pending |
+| T21 | Usable UI and operating guide | done | Full-page workspace; meeting-tab targeting; elapsed/status UI; rename/export/retry/delete; README | pending |
 
 Status values: `todo` · `in-progress` · `done` · `blocked`.
 Review values: `pending` · `approved` · `changes-requested`.

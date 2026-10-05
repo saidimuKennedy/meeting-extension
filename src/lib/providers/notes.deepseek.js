@@ -1,8 +1,10 @@
 import { fetchWithRetry } from '../net.js';
 import { DEFAULT_DEEPSEEK_MODEL } from '../models.js';
+import { buildNoteMessages, buildReductionMessages } from '../templates.js';
 
 const ENDPOINT = 'https://api.deepseek.com/chat/completions';
-const CHUNK_CHARS = 40000;
+const CHUNK_CHARS = 24000;
+const OVERLAP_CHARS = 800;
 
 async function chat({ messages, apiKey, models }) {
   const chain = models?.length ? models : [DEFAULT_DEEPSEEK_MODEL];
@@ -32,47 +34,60 @@ async function chat({ messages, apiKey, models }) {
   throw lastError || new Error('No DeepSeek model available.');
 }
 
-function chunkText(text, size) {
+function splitIntoChunks(text, size, overlap) {
   const chunks = [];
-  for (let i = 0; i < text.length; i += size) chunks.push(text.slice(i, i + size));
-  return chunks;
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + size, text.length);
+    if (end < text.length) {
+      const boundary = text.lastIndexOf('\n\n', end);
+      if (boundary > start + size * 0.5) end = boundary;
+    }
+    chunks.push(text.slice(start, end).trim());
+    if (end >= text.length) break;
+    start = Math.max(end - overlap, start + 1);
+  }
+  return chunks.filter(Boolean);
 }
 
-export async function generateNotes({ transcript, template, apiKey, models }) {
+export async function generateNotes({
+  transcript,
+  formatId = 'general',
+  customInstructions = '',
+  apiKey,
+  models,
+  onProgress,
+  getCachedReduction,
+  saveReduction
+}) {
   if (transcript.length <= CHUNK_CHARS) {
-    return chat({
-      apiKey,
-      models,
-      messages: [
-        { role: 'system', content: template.system },
-        { role: 'user', content: template.user(transcript) }
-      ]
-    });
+    return chat({ apiKey, models, messages: buildNoteMessages({ formatId, transcript, customInstructions }) });
   }
 
-  const chunks = chunkText(transcript, CHUNK_CHARS);
+  const chunks = splitIntoChunks(transcript, CHUNK_CHARS, OVERLAP_CHARS);
   const summaries = [];
-  for (let i = 0; i < chunks.length; i++) {
-    const summary = await chat({
-      apiKey,
-      models,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an executive assistant. Summarize the transcript chunk faithfully. Capture decisions, action items (with owners), and key points. Do not invent facts.'
-        },
-        { role: 'user', content: `Chunk ${i + 1} of ${chunks.length}:\n"""\n${chunks[i]}\n"""` }
-      ]
-    });
-    summaries.push(`### Chunk ${i + 1}\n${summary}`);
+
+  for (let index = 0; index < chunks.length; index++) {
+    onProgress?.(index, chunks.length);
+    let summary = getCachedReduction ? await getCachedReduction(index) : null;
+    if (!summary) {
+      summary = await chat({
+        apiKey,
+        models,
+        messages: buildReductionMessages({ formatId, chunk: chunks[index], index, total: chunks.length, customInstructions })
+      });
+      if (saveReduction && summary) await saveReduction(index, summary);
+    }
+    if (summary) summaries.push(`### Part ${index + 1} of ${chunks.length}\n${summary}`);
   }
 
   return chat({
     apiKey,
     models,
-    messages: [
-      { role: 'system', content: template.system },
-      { role: 'user', content: template.user(summaries.join('\n\n')) }
-    ]
+    messages: buildNoteMessages({
+      formatId,
+      transcript: summaries.join('\n\n'),
+      customInstructions
+    })
   });
 }
