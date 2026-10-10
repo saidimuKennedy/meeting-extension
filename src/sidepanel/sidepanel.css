@@ -112,6 +112,44 @@ input, select, textarea {
   border: 1px solid var(--border); border-radius: 7px;
   background: var(--bg); color: var(--fg);
 }
+select { accent-color: var(--accent); }
+/* Keep the native picker readable on older browsers; newer Chrome gets a fully themed menu below. */
+option { background: var(--surface); color: var(--fg); }
+option:checked { background: var(--accent); color: var(--accent-contrast); }
+@supports (appearance: base-select) {
+  select, select::picker(select) { appearance: base-select; }
+  select {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+  select::picker-icon { color: var(--accent); transition: rotate .18s ease; }
+  select:open::picker-icon { rotate: 180deg; }
+  select::picker(select) {
+    margin-top: 5px;
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+  }
+  select option {
+    padding: 8px 10px;
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--fg);
+  }
+  select option:checked { background: var(--surface-soft); color: var(--fg); }
+  select option:hover,
+  select option:focus,
+  select option:checked:hover {
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+}
 textarea { resize: vertical; }
 #save-settings { justify-self: start; }
 
