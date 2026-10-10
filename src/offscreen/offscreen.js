@@ -17,6 +17,7 @@ let startedAt = 0;
 let currentRec = null;
 let parts = [];
 let rotateTimer = null;
+let captureLimitTimer = null;
 let stopping = false;
 let interrupted = false;
 let interruptionNotified = false;
@@ -24,7 +25,7 @@ let finished = false;
 let captureError = null;
 
 chrome.runtime.onMessage.addListener((msg, sendResponse) => {
-  if (msg.type === MSG.OFFSCREEN_START) start(msg.streamId, msg.meetingId);
+  if (msg.type === MSG.OFFSCREEN_START) start(msg.streamId, msg.meetingId, msg.maxDurationSec);
   if (msg.type === MSG.OFFSCREEN_STOP) stop();
   if (msg.type === MSG.GET_CAPTURE_STATUS) {
     sendResponse({
@@ -67,7 +68,7 @@ async function notify(message) {
   }
 }
 
-async function start(streamId, mid) {
+async function start(streamId, mid, maxDurationSec) {
   try {
     meetingId = mid;
     segmentIndex = 0;
@@ -109,6 +110,9 @@ async function start(streamId, mid) {
     }
 
     startedAt = Date.now();
+    if (Number.isFinite(maxDurationSec) && maxDurationSec > 0) {
+      captureLimitTimer = setTimeout(() => { void stop(); }, maxDurationSec * 1000);
+    }
     await setRun('active', { segmentCount: 0, error: null });
     beginSegment();
   } catch (err) {
@@ -200,6 +204,7 @@ async function stop() {
     return;
   }
   stopping = true;
+  clearTimeout(captureLimitTimer);
   clearTimeout(rotateTimer);
   await setRun('finishing', { segmentCount: segmentIndex });
   if (currentRec) currentRec.stop();
@@ -259,6 +264,7 @@ async function finish() {
 
 function cleanup() {
   clearTimeout(rotateTimer);
+  clearTimeout(captureLimitTimer);
   if (tabTrack) tabTrack.onended = null;
   tabStream?.getTracks().forEach((t) => t.stop());
   micStream?.getTracks().forEach((t) => t.stop());

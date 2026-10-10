@@ -24,6 +24,8 @@ const els = {
   status: $('status-text'),
   elapsed: $('elapsed-text'),
   segmentCount: $('segment-count'),
+  transcriptionOnlyTest: $('transcription-only-test'),
+  speakerLabelTest: $('speaker-label-test'),
   start: $('start'),
   stop: $('stop'),
   settingsToggle: $('settings-toggle'),
@@ -91,6 +93,12 @@ async function init() {
     populateTranscriptionModels(provider);
     els.openaiModel.value = provider.defaultModel;
   };
+  els.transcriptionOnlyTest.onchange = () => {
+    if (els.transcriptionOnlyTest.checked) els.speakerLabelTest.checked = false;
+  };
+  els.speakerLabelTest.onchange = () => {
+    if (els.speakerLabelTest.checked) els.transcriptionOnlyTest.checked = false;
+  };
   els.saveSettings.onclick = onSaveSettings;
   els.start.onclick = onStart;
   els.stop.onclick = onStop;
@@ -114,15 +122,16 @@ async function init() {
 }
 
 function populateTranscriptionModels(provider) {
+  const labels = {
+    'gpt-transcribe': 'gpt-transcribe (recommended)',
+    'whisper-1': 'whisper-1 (timestamps)',
+    'gpt-4o-transcribe-diarize': 'gpt-4o-transcribe-diarize (speaker labels)'
+  };
   els.openaiModel.replaceChildren();
   provider.models.forEach((model) => {
     const option = document.createElement('option');
     option.value = model;
-    option.textContent = model === 'gpt-transcribe'
-      ? 'gpt-transcribe (recommended)'
-      : model === 'whisper-1'
-        ? 'whisper-1 (timestamps)'
-        : model;
+    option.textContent = labels[model] || model;
     els.openaiModel.appendChild(option);
   });
 }
@@ -144,9 +153,10 @@ async function onSaveSettings() {
 
 async function onStart() {
   const settings = await getSettings();
-  if (!settings.openaiApiKey || !settings.deepseekKey) {
+  const testOnly = els.transcriptionOnlyTest.checked || els.speakerLabelTest.checked;
+  if (!settings.openaiApiKey || (!testOnly && !settings.deepseekKey)) {
     els.settings.classList.remove('hidden');
-    setStatus('Add your API keys first');
+    setStatus(testOnly ? 'Add your OpenAI API key first' : 'Add your OpenAI and DeepSeek API keys first');
     return;
   }
 
@@ -165,6 +175,12 @@ async function onStart() {
     startedAt: Date.now(),
     durationSec: 0,
     segmentCount: 0,
+    transcriptionOnly: testOnly,
+    transcriptionModel: els.speakerLabelTest.checked
+      ? 'gpt-4o-transcribe-diarize'
+      : els.transcriptionOnlyTest.checked
+        ? 'whisper-1'
+        : (settings.openaiTranscriptionModel || DEFAULT_OPENAI_TRANSCRIPTION_MODEL),
     participants: [],
     transcript: '',
     transcriptTimed: '',
@@ -186,7 +202,12 @@ async function onStart() {
   setStatus('Starting...');
   const requestedTabId = Number(new URLSearchParams(location.search).get('targetTabId'));
   const targetTabId = Number.isInteger(requestedTabId) && requestedTabId > 0 ? requestedTabId : undefined;
-  const res = await chrome.runtime.sendMessage({ type: MSG.START_CAPTURE, meetingId, targetTabId });
+  const res = await chrome.runtime.sendMessage({
+    type: MSG.START_CAPTURE,
+    meetingId,
+    targetTabId,
+    maxDurationSec: meeting.transcriptionOnly ? 240 : undefined
+  });
   if (!res?.ok) {
     const failed = await getMeeting(meetingId);
     if (failed && failed.status === 'recording') {
@@ -238,7 +259,10 @@ async function onRecordingDone({ meetingId, segmentCount, durationSec }) {
 }
 
 async function processMeeting(meeting, { regenerateNotes = false } = {}) {
-  const settings = await getSettings();
+  const savedSettings = await getSettings();
+  const settings = meeting.transcriptionModel
+    ? { ...savedSettings, openaiTranscriptionModel: meeting.transcriptionModel }
+    : savedSettings;
   const formatId = meeting.noteFormatId || settings.noteFormatId || noteFormats[0].id;
   const customInstructions = meeting.customInstructions || '';
   setCurrentMeeting(meeting);
@@ -253,6 +277,19 @@ async function processMeeting(meeting, { regenerateNotes = false } = {}) {
       meeting.status = 'transcribed';
       meeting.error = null;
       await saveMeeting(meeting);
+    }
+
+    if (meeting.transcriptionOnly && !regenerateNotes) {
+      meeting.status = 'transcribed';
+      meeting.error = null;
+      await saveMeeting(meeting);
+      renderMeeting(meeting);
+      switchView('transcript');
+      await renderHistory();
+      setStatus(meeting.transcriptionModel === 'gpt-4o-transcribe-diarize'
+        ? 'Speaker-labeled transcript ready. Notes were skipped.'
+        : 'Whisper transcript ready. Notes were skipped.');
+      return;
     }
 
     if (regenerateNotes && meeting.notesMarkdown) {
@@ -380,7 +417,12 @@ async function transcribeSegmentsWithResume(meeting, settings) {
       }
     }
 
-    if (record.text) plainParts.push(record.text);
+    if (record.text) {
+      const speakerLines = (record.words || []).filter((item) => item?.speaker && item?.text);
+      plainParts.push(speakerLines.length
+        ? speakerLines.map((item) => `${item.speaker}: ${item.text}`).join('\n')
+        : record.text);
+    }
     timedParts.push(formatTranscriptBlock(record, baseSeconds, segment.durationSec));
   }
 
@@ -458,7 +500,7 @@ function formatTimestamp(totalSeconds) {
 function formatTranscriptBlock(record, baseSeconds, fallbackDurationSec) {
   const words = Array.isArray(record.words) ? record.words.filter((word) => word?.text) : [];
   if (words.length) {
-    return words.map((word) => `[${formatTimestamp(word.start ?? baseSeconds)}] ${word.text}`).join('\n');
+    return words.map((word) => `[${formatTimestamp(word.start ?? baseSeconds)}] ${word.speaker ? `${word.speaker}: ` : ''}${word.text}`).join('\n');
   }
   if (!record.text) return '';
   return `[${formatTimestamp(baseSeconds)}] ${record.text}`;
@@ -663,9 +705,17 @@ async function renderHistory() {
 
     if (m.status && m.status !== 'done' && m.id !== activeMeetingId) {
       const btn = document.createElement('button');
-      btn.textContent = 'Retry';
+      const isTranscriptOnly = m.transcriptionOnly && m.status === 'transcribed';
+      btn.textContent = isTranscriptOnly ? 'Generate notes' : 'Retry';
       btn.className = 'secondary';
-      btn.onclick = (e) => { e.stopPropagation(); retryMeeting(m.id); };
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        if (isTranscriptOnly) {
+          getMeeting(m.id).then((meeting) => meeting && processMeeting({ ...meeting, transcriptionOnly: false }));
+        } else {
+          retryMeeting(m.id);
+        }
+      };
       actions.appendChild(btn);
     }
 

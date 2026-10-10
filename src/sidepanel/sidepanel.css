@@ -88,6 +88,11 @@ button:disabled { opacity: .5; cursor: default; }
 .capture-metrics { color: var(--muted); }
 .elapsed { color: var(--fg); font: 600 15px/1 var(--mono); font-variant-numeric: tabular-nums; }
 .capture-state { min-width: 0; color: var(--muted); overflow-wrap: anywhere; text-align: right; }
+.test-mode { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 10px; padding-top: 10px; border-top: 1px solid var(--border); cursor: pointer; }
+.test-mode input { width: 18px; height: 18px; flex: 0 0 18px; margin: 1px 0 0; accent-color: var(--accent); }
+.test-mode span { display: grid; gap: 2px; }
+.test-mode strong { font-size: 13px; }
+.test-mode small { color: var(--muted); font-size: 12px; }
 
 .settings {
   display: grid;
@@ -155,6 +160,7 @@ pre { max-height: 62vh; min-height: 200px; margin: 0; padding: 16px 2px; overflo
   .capture-buttons button { padding-inline: 7px; }
   .capture-metrics { justify-content: space-between; }
   .capture-state { text-align: left; }
+  .test-mode { grid-column: 1; }
   .settings { grid-template-columns: minmax(0, 1fr); padding: 12px; }
   .output, .history { padding: 14px; }
 }

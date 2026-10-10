@@ -25,6 +25,14 @@
         <span class="status" id="segment-count">0 segments</span>
       </div>
       <span class="status capture-state" id="status-text">Idle</span>
+      <label class="test-mode">
+        <input type="checkbox" id="transcription-only-test" />
+        <span><strong>Whisper test</strong><small>Use Whisper only, skip notes, and stop at 4 minutes.</small></span>
+      </label>
+      <label class="test-mode">
+        <input type="checkbox" id="speaker-label-test" />
+        <span><strong>Speaker labels test</strong><small>Label voices A/B, skip notes, and stop at 4 minutes. You’ll map A/B to each person.</small></span>
+      </label>
     </section>
 
     <section class="settings hidden" id="settings">
@@ -38,6 +46,7 @@
           <select id="openai-model">
             <option value="gpt-transcribe">gpt-transcribe (recommended)</option>
             <option value="whisper-1">whisper-1</option>
+            <option value="gpt-4o-transcribe-diarize">gpt-4o-transcribe-diarize (speaker labels)</option>
           </select>
         </label>
       </fieldset>

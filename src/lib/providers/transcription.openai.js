@@ -3,7 +3,7 @@ import { fetchWithRetry } from '../net.js';
 export const OPENAI_TRANSCRIPTIONS_ENDPOINT = 'https://api.openai.com/v1/audio/transcriptions';
 // gpt-transcribe is recommended for recorded speech; Whisper remains available
 // for users who need timestamped segments.
-export const OPENAI_TRANSCRIPTION_MODELS = ['gpt-transcribe', 'whisper-1'];
+export const OPENAI_TRANSCRIPTION_MODELS = ['gpt-transcribe', 'whisper-1', 'gpt-4o-transcribe-diarize'];
 export const OPENAI_MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
 
 export const OPENAI_TRANSCRIPTION_PROVIDER = {
@@ -57,6 +57,9 @@ export async function transcribeOpenAISegment({
   if (model === 'whisper-1') {
     form.append('response_format', 'verbose_json');
     form.append('timestamp_granularities[]', 'segment');
+  } else if (model === 'gpt-4o-transcribe-diarize') {
+    form.append('response_format', 'diarized_json');
+    form.append('chunking_strategy', 'auto');
   } else {
     form.append('response_format', 'json');
   }
@@ -104,7 +107,8 @@ export async function transcribeOpenAISegment({
         const start = normalizeTimestamp(segment?.start, 0);
         const end = normalizeTimestamp(segment?.end, start);
         const text = typeof segment?.text === 'string' ? segment.text.trim() : '';
-        return { start: baseSeconds + start, end: baseSeconds + end, text };
+        const speaker = typeof segment?.speaker === 'string' ? segment.speaker.trim() : '';
+        return { start: baseSeconds + start, end: baseSeconds + end, text, ...(speaker ? { speaker } : {}) };
       })
       .filter((segment) => segment.text),
     audioBytes: blob.size,

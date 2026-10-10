@@ -55,7 +55,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
   if (msg.type === MSG.START_CAPTURE) {
-    startCapture(msg.meetingId, msg.targetTabId).then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
+    startCapture(msg.meetingId, msg.targetTabId, msg.maxDurationSec).then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
   if (msg.type === MSG.STOP_CAPTURE) {
@@ -64,7 +64,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-async function startCapture(meetingId, targetTabId) {
+async function startCapture(meetingId, targetTabId, maxDurationSec) {
   let tab;
   if (Number.isInteger(targetTabId) && targetTabId > 0) {
     try {
@@ -76,6 +76,9 @@ async function startCapture(meetingId, targetTabId) {
     [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   }
   if (!tab?.id) throw new Error('No active tab to capture.');
+  if (isSpotifyUrl(tab.url)) {
+    throw new Error('Spotify audio cannot be transcribed. Start recording from a permitted meeting or audio source.');
+  }
 
   let streamId;
   try {
@@ -92,8 +95,18 @@ async function startCapture(meetingId, targetTabId) {
     type: MSG.OFFSCREEN_START,
     streamId,
     meetingId,
+    maxDurationSec,
     tabTitle: tab.title || 'Untitled meeting'
   });
+}
+
+function isSpotifyUrl(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === 'spotify.com' || hostname.endsWith('.spotify.com');
+  } catch {
+    return false;
+  }
 }
 
 async function stopCapture() {
